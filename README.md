@@ -1,6 +1,6 @@
 # Flipkart Automation Framework
 
-Enterprise-grade automation framework for testing Flipkart UI and API with Selenium, TestNG, and Rest-Assured.
+Automation framework for testing Flipkart UI and API with Selenium, TestNG, and Rest-Assured.
 
 ## Features
 - Page Object Model (POM) with PageFactory
