@@ -1,0 +1,90 @@
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+parameters:
+  - name: browser
+    displayName: 'Browser'
+    type: string
+    default: 'chrome'
+    values:
+      - chrome
+      - firefox
+      - edge
+  
+  - name: environment
+    displayName: 'Environment'
+    type: string
+    default: 'qa'
+    values:
+      - qa
+      - staging
+      - prod
+  
+  - name: suite
+    displayName: 'Test Suite'
+    type: string
+    default: 'testng.xml'
+    values:
+      - testng.xml
+      - smoke-suite.xml
+      - regression-suite.xml
+  
+  - name: headless
+    displayName: 'Headless Mode'
+    type: boolean
+    default: true
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  mavenPomFile: 'pom.xml'
+  threadCount: 3
+
+stages:
+  - stage: Build
+    displayName: 'Build Stage'
+    jobs:
+      - job: BuildJob
+        displayName: 'Build Application'
+        steps:
+          - task: Maven@3
+            displayName: 'Maven Clean Compile'
+            inputs:
+              mavenPomFile: '$(mavenPomFile)'
+              goals: 'clean compile'
+
+  - stage: Test
+    displayName: 'Test Stage'
+    jobs:
+      - job: TestJob
+        displayName: 'Execute Tests'
+        steps:
+          - task: Maven@3
+            displayName: 'Run Tests'
+            inputs:
+              mavenPomFile: '$(mavenPomFile)'
+              goals: 'test'
+              options: |
+                -Dbrowser=${{ parameters.browser }}
+                -Denvironment=${{ parameters.environment }}
+                -Dheadless=${{ parameters.headless }}
+                -DthreadCount=$(threadCount)
+                -DsuiteXmlFile=src/test/resources/testng/${{ parameters.suite }}
+
+          - task: PublishTestResults@2
+            displayName: 'Publish Test Results'
+            condition: always()
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '**/surefire-reports/TEST-*.xml'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Screenshots'
+            condition: always()
+            inputs:
+              PathtoPublish: 'test-output/screenshots'
+              ArtifactName: 'screenshots'

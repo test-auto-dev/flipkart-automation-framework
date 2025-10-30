@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  selenium-hub:
+    image: selenium/hub:4.15.0
+    container_name: selenium-hub
+    ports:
+      - "4444:4444"
+      - "4442:4442"
+      - "4443:4443"
+    environment:
+      - SE_SESSION_REQUEST_TIMEOUT=300
+      - SE_NODE_SESSION_TIMEOUT=300
+
+  chrome-node:
+    image: selenium/node-chrome:4.15.0
+    container_name: chrome-node
+    depends_on:
+      - selenium-hub
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=2
+    ports:
+      - "5900:5900"
+    shm_size: 2gb
+
+  firefox-node:
+    image: selenium/node-firefox:4.15.0
+    container_name: firefox-node
+    depends_on:
+      - selenium-hub
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=2
+    ports:
+      - "5901:5900"
+    shm_size: 2gb
+
+  test-execution:
+    build: .
+    container_name: flipkart-tests
+    depends_on:
+      - selenium-hub
+      - chrome-node
+    environment:
+      - BROWSER=chrome
+      - ENVIRONMENT=qa
+      - HEADLESS=true
+      - GRID_URL=http://selenium-hub:4444/wd/hub
+    volumes:
+      - ./test-output:/app/test-output
+    command: >
+      mvn clean test
+      -Dbrowser=${BROWSER}
+      -Denvironment=${ENVIRONMENT}
+      -Dheadless=${HEADLESS}
+      -DgridUrl=${GRID_URL}
+      -DsuiteXmlFile=src/test/resources/testng/testng.xml
