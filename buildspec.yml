@@ -1,0 +1,33 @@
+version: 0.2
+
+env:
+  variables:
+    BROWSER: "chrome"
+    ENVIRONMENT: "qa"
+    HEADLESS: "true"
+    THREAD_COUNT: "3"
+    SUITE_FILE: "testng.xml"
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto17
+    commands:
+      - echo "Installing dependencies..."
+      - mvn clean compile -DskipTests=true
+
+  build:
+    commands:
+      - echo "Running tests on $BROWSER for $ENVIRONMENT..."
+      - mvn test -Dbrowser=$BROWSER -Denvironment=$ENVIRONMENT -Dheadless=$HEADLESS -DthreadCount=$THREAD_COUNT -DsuiteXmlFile=src/test/resources/testng/$SUITE_FILE
+
+reports:
+  junit:
+    files:
+      - "target/surefire-reports/*.xml"
+
+artifacts:
+  files:
+    - target/surefire-reports/**/*
+    - test-output/screenshots/**/*
+  discard-paths: yes
