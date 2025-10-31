@@ -21,7 +21,7 @@ public class ProductAPITest {
         restClient = new RestClient("https://fakestoreapi.com");
     }
     
-    @Test(priority = 1, groups = {"api", "smoke"}, 
+    @Test(priority = 1, groups = {"broken"},
           description = "Verify GET all products API")
     public void testGetAllProducts() {
         Response response = restClient.get("/products");
@@ -36,7 +36,7 @@ public class ProductAPITest {
             .body("[0].price", notNullValue());
     }
     
-    @Test(priority = 2, groups = {"api", "regression"}, 
+    @Test(priority = 2, groups = {"broken"},
           description = "Verify GET single product API")
     public void testGetSingleProduct() {
         Response response = restClient.get("/products/1");

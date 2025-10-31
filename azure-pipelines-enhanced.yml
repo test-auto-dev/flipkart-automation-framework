@@ -3,9 +3,13 @@ trigger:
     include:
       - main
       - develop
-      - feature-*
-      - fix-*
-      - feat-*
+      - feature/*
+
+pr:
+  branches:
+    include:
+      - main
+      - develop
 
 parameters:
   - name: browser
@@ -16,7 +20,7 @@ parameters:
       - chrome
       - firefox
       - edge
-
+  
   - name: environment
     displayName: 'Target Environment'
     type: string
@@ -25,7 +29,7 @@ parameters:
       - qa
       - staging
       - prod
-
+  
   - name: suite
     displayName: 'Test Suite'
     type: string
@@ -34,12 +38,12 @@ parameters:
       - testng.xml
       - smoke-suite.xml
       - regression-suite.xml
-
+  
   - name: headless
     displayName: 'Headless Mode'
     type: boolean
     default: true
-
+  
   - name: parallelThreads
     displayName: 'Number of Parallel Threads'
     type: number
@@ -52,27 +56,43 @@ parameters:
       - 5
       - 6
       - 8
-
+  
   - name: includeGroups
     displayName: 'Include Test Groups (comma-separated, leave empty for all)'
     type: string
     default: ''
-
+    values:
+      - ''
+      - 'smoke'
+      - 'regression'
+      - 'api'
+      - 'ui'
+      - 'smoke,api'
+      - 'regression,api'
+      - 'smoke,regression,api,ui'
+  
   - name: excludeGroups
     displayName: 'Exclude Test Groups (comma-separated)'
     type: string
     default: ''
-
+    values:
+      - ''
+      - 'broken'
+      - 'skip'
+      - 'wip'
+      - 'broken,skip'
+      - 'broken,skip,wip'
+  
   - name: specificTestClass
     displayName: 'Run Specific Test Class (Optional, leave empty for all)'
     type: string
     default: ''
-
+  
   - name: excludeTestClass
     displayName: 'Exclude Specific Test Classes (comma-separated, Optional)'
     type: string
     default: ''
-
+  
   - name: retryCount
     displayName: 'Retry Failed Tests'
     type: number
@@ -82,12 +102,12 @@ parameters:
       - 1
       - 2
       - 3
-
+  
   - name: enableReporting
     displayName: 'Generate & Publish Reports'
     type: boolean
     default: true
-
+  
   - name: enableLogging
     displayName: 'Enable Verbose Logging'
     type: boolean
@@ -116,7 +136,7 @@ stages:
               script: |
                 $threads = ${{ parameters.parallelThreads }}
                 $maxThreads = [System.Environment]::ProcessorCount + 1
-
+                
                 Write-Host "===================================="
                 Write-Host "Configuration Summary:"
                 Write-Host "===================================="
@@ -133,7 +153,7 @@ stages:
                 Write-Host "Retry Count: ${{ parameters.retryCount }}"
                 Write-Host "Verbose Logging: ${{ parameters.enableLogging }}"
                 Write-Host "===================================="
-
+                
                 if ($threads -gt $maxThreads) {
                     Write-Host "##vso[task.logissue type=warning]Thread count ($threads) exceeds recommended maximum ($maxThreads)"
                 }
@@ -146,28 +166,9 @@ stages:
       - job: BuildApplication
         displayName: 'Build Application'
         steps:
-          # Optional: Setup Maven settings.xml (for private repos)
-          - task: Bash@3
-            displayName: 'Setup Maven Settings'
-            condition: always()
-            inputs:
-              targetType: 'inline'
-              script: |
-                echo "Creating Maven settings.xml..."
-                mkdir -p ~/.m2
-                cat > ~/.m2/settings.xml <<EOF
-                <settings>
-                  <mirrors>
-                    <mirror>
-                      <id>central</id>
-                      <name>Maven Central</name>
-                      <url>https://repo.maven.apache.org/maven2</url>
-                      <mirrorOf>central</mirrorOf>
-                    </mirror>
-                  </mirrors>
-                </settings>
-                EOF
-
+          - task: UseMavenRepository@0
+            displayName: 'Use Maven Repository'
+          
           - task: Maven@3
             displayName: 'Maven Clean Compile'
             inputs:
@@ -175,7 +176,7 @@ stages:
               goals: 'clean compile'
               options: '-DskipTests -X'
               javaHomeOption: 'JDKVersion'
-              jdkVersionOption: '11'
+              jdkVersionOption: '1.11'
               mavenVersionOption: 'Default'
               mavenAuthenticateFeed: false
               effectivePomSkip: false
@@ -190,12 +191,12 @@ stages:
         timeoutInMinutes: 90
         steps:
           - task: Maven@3
-            displayName: 'Resolve Maven Dependencies'
+            displayName: 'Build Test Dependencies'
             inputs:
               mavenPomFile: '$(mavenPomFile)'
               goals: 'dependency:resolve'
               javaHomeOption: 'JDKVersion'
-              jdkVersionOption: '11'
+              jdkVersionOption: '1.11'
 
           - task: PowerShell@2
             displayName: 'Build Maven Test Command'
@@ -203,36 +204,56 @@ stages:
               targetType: 'inline'
               script: |
                 $mavenCmd = "mvn clean test"
+                
+                # Add browser parameter
                 $mavenCmd += " -Dbrowser=${{ parameters.browser }}"
+                
+                # Add environment parameter
                 $mavenCmd += " -Denvironment=${{ parameters.environment }}"
+                
+                # Add headless parameter
                 $mavenCmd += " -Dheadless=${{ parameters.headless }}"
+                
+                # Add parallel thread count
                 $mavenCmd += " -DthreadCount=${{ parameters.parallelThreads }}"
+                
+                # Add test suite
                 $mavenCmd += " -DsuiteXmlFile=src/test/resources/testng/${{ parameters.suite }}"
-
+                
+                # Add retry count if greater than 0
                 if (${{ parameters.retryCount }} -gt 0) {
                     $mavenCmd += " -Dsurefire.rerunFailingTestsCount=${{ parameters.retryCount }}"
                 }
-
+                
+                # Add include groups if specified
                 if ('${{ parameters.includeGroups }}' -ne '') {
-                    $mavenCmd += " -Dgroups.include=${{ parameters.includeGroups }}"
+                    $includeGroups = '${{ parameters.includeGroups }}'
+                    $mavenCmd += " -Dgroups.include=`"$includeGroups`""
                 }
-
+                
+                # Add exclude groups if specified
                 if ('${{ parameters.excludeGroups }}' -ne '') {
-                    $mavenCmd += " -Dgroups.exclude=${{ parameters.excludeGroups }}"
+                    $excludeGroups = '${{ parameters.excludeGroups }}'
+                    $mavenCmd += " -Dgroups.exclude=`"$excludeGroups`""
                 }
-
+                
+                # Add specific test class if specified
                 if ('${{ parameters.specificTestClass }}' -ne '') {
-                    $mavenCmd += " -Dtest=${{ parameters.specificTestClass }}"
+                    $testClass = '${{ parameters.specificTestClass }}'
+                    $mavenCmd += " -Dtest=$testClass"
                 }
-
-                if ('${{ parameters.excludeTestClass }}' -ne '') {
-                    $mavenCmd += " -DexcludeTestClasses=${{ parameters.excludeTestClass }}"
-                }
-
+                
+                # Add verbose logging if enabled
                 if ('${{ parameters.enableLogging }}' -eq 'true') {
                     $mavenCmd += " -X"
                 }
-
+                
+                # Set system property for excluding test classes
+                if ('${{ parameters.excludeTestClass }}' -ne '') {
+                    $excludeClasses = '${{ parameters.excludeTestClass }}'
+                    $mavenCmd += " -DexcludeTestClasses=`"$excludeClasses`""
+                }
+                
                 Write-Host "##[section]Final Maven Command:"
                 Write-Host $mavenCmd
                 Write-Host "##vso[task.setvariable variable=MAVEN_CMD]$mavenCmd"
@@ -241,6 +262,9 @@ stages:
               echo "========================================="
               echo "Starting Test Execution"
               echo "========================================="
+              echo "Threads: ${{ parameters.parallelThreads }}"
+              echo "Browser: ${{ parameters.browser }}"
+              echo "Environment: ${{ parameters.environment }}"
               echo "$(MAVEN_CMD)"
               echo "========================================="
               $(MAVEN_CMD)
@@ -264,16 +288,99 @@ stages:
               testResultsFiles: '**/surefire-reports/TEST-*.xml'
               failTaskOnFailedTests: false
               searchFolder: '$(System.DefaultWorkingDirectory)'
-              testRunTitle: 'Automation Tests - ${{ parameters.browser }}'
+              testRunTitle: 'Flipkart Automation Tests - ${{ parameters.browser }}'
               mergeTestResults: true
 
           - task: PublishBuildArtifacts@1
-            displayName: 'Publish Reports & Screenshots'
+            displayName: 'Publish Extent Report'
+            condition: always()
+            inputs:
+              PathtoPublish: '$(reportDirectory)'
+              ArtifactName: 'extent-reports'
+              publishLocation: 'Container'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Screenshots'
+            condition: always()
+            inputs:
+              PathtoPublish: '$(screenshotDirectory)'
+              ArtifactName: 'screenshots'
+              publishLocation: 'Container'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Logs'
             condition: always()
             inputs:
               PathtoPublish: 'test-output'
-              ArtifactName: 'reports'
+              ArtifactName: 'test-logs'
               publishLocation: 'Container'
+
+      - job: AnalyzeResults
+        displayName: 'Analyze Test Results'
+        condition: always()
+        steps:
+          - task: PowerShell@2
+            displayName: 'Generate Test Summary'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "========================================="
+                Write-Host "Test Execution Summary"
+                Write-Host "========================================="
+                
+                $testResults = Get-ChildItem -Path "**/surefire-reports/TEST-*.xml" -Recurse -ErrorAction SilentlyContinue
+                
+                if ($testResults.Count -gt 0) {
+                    Write-Host "Test reports found: $($testResults.Count)"
+                    
+                    foreach ($result in $testResults) {
+                        Write-Host "Processing: $($result.FullName)"
+                        
+                        [xml]$content = Get-Content $result.FullName
+                        $testsuite = $content.testsuite
+                        
+                        Write-Host "Tests Run: $($testsuite.tests)"
+                        Write-Host "Failures: $($testsuite.failures)"
+                        Write-Host "Skipped: $($testsuite.skipped)"
+                        Write-Host "Time: $($testsuite.time) seconds"
+                        Write-Host "---"
+                    }
+                } else {
+                    Write-Host "##[warning]No test results found"
+                }
+                
+                Write-Host "========================================="
+
+          - task: Bash@3
+            displayName: 'Check Report Generation'
+            inputs:
+              targetType: 'inline'
+              script: |
+                echo "========================================="
+                echo "Checking Generated Reports"
+                echo "========================================="
+                
+                if [ -d "test-output/extent-reports" ]; then
+                    echo "Extent Reports:"
+                    ls -lah test-output/extent-reports/
+                else
+                    echo "No extent reports directory found"
+                fi
+                
+                if [ -d "test-output/screenshots" ]; then
+                    echo "Screenshots:"
+                    ls -lah test-output/screenshots/
+                else
+                    echo "No screenshots directory found"
+                fi
+                
+                if [ -f "test-output/automation.log" ]; then
+                    echo "Log file exists: $(wc -l < test-output/automation.log) lines"
+                else
+                    echo "No log file found"
+                fi
+                
+                echo "========================================="
 
   - stage: Notification
     displayName: 'Notifications'
@@ -290,9 +397,57 @@ stages:
               script: |
                 $buildStatus = "$(Build.Result)"
                 $buildUrl = "$(System.CollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)"
-
+                
                 Write-Host "========================================="
                 Write-Host "Build Status: $buildStatus"
                 Write-Host "Build URL: $buildUrl"
                 Write-Host "========================================="
-                Write-Host "##[warning]Email notification can be added using pipeline notifications or service hook integrations."
+                
+                $emailBody = @"
+                Test Execution Report
+                =====================
+                
+                Build: $(Build.BuildNumber)
+                Status: $buildStatus
+                
+                Configuration:
+                - Browser: ${{ parameters.browser }}
+                - Environment: ${{ parameters.environment }}
+                - Test Suite: ${{ parameters.suite }}
+                - Parallel Threads: ${{ parameters.parallelThreads }}
+                - Include Groups: ${{ parameters.includeGroups }}
+                - Exclude Groups: ${{ parameters.excludeGroups }}
+                
+                Details: $buildUrl
+                "@
+                
+                Write-Host $emailBody
+                Write-Host "##[warning]Email notification configured in pipeline settings"
+
+          - task: SendEmail@1
+            displayName: 'Send Email Notification'
+            condition: always()
+            inputs:
+              SmtpServer: '$(SmtpServer)'
+              FromAddress: '$(FromAddress)'
+              ToAddress: '$(ToAddress)'
+              Subject: 'Flipkart Automation Tests - Build $(Build.BuildNumber) - ${{ parameters.browser }} - ${{ parameters.environment }}'
+              EmailBody: |
+                Test Execution Completed
+
+                Browser: ${{ parameters.browser }}
+                Environment: ${{ parameters.environment }}
+                Suite: ${{ parameters.suite }}
+                Parallel Threads: ${{ parameters.parallelThreads }}
+                Include Groups: ${{ parameters.includeGroups }}
+                Exclude Groups: ${{ parameters.excludeGroups }}
+                
+                Build Status: $(Build.Result)
+                Build URL: $(System.CollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)
+                
+                Artifacts Available:
+                - Extent Reports
+                - Screenshots
+                - Test Logs
+              AttachmentPath: '$(buildDirectory)'
+            continueOnError: true
