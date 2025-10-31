@@ -15,7 +15,6 @@ target/
 
 # Test output
 test-output/
-reports/
 
 # Configuration
 local.properties
