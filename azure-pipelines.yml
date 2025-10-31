@@ -3,13 +3,9 @@ trigger:
     include:
       - main
       - develop
-      - feature/*
-
-pr:
-  branches:
-    include:
-      - main
-      - develop
+      - feature-*
+      - fix-*
+      - feat-*
 
 parameters:
   - name: browser
